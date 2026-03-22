@@ -1,0 +1,13 @@
+{
+    "manifest_version": 3,
+    "name": "Hack LMS",
+    "description": "Utilies for LMS",
+    "version": "1.0.0",
+    "content_scripts": [
+        {
+            "js": ["content-script.js"],
+            "matches": ["https://canvas.ssu.ac.kr/courses/*"],
+            "all_frames": true
+        }
+    ]
+}
