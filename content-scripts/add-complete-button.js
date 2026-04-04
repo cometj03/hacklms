@@ -1,6 +1,6 @@
 'use strict';
 
-const DEBUG = true;
+const DEBUG = false;
 
 (async () => {
     const iframe = document.querySelector('#tool_content');

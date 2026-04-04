@@ -5,13 +5,14 @@
     "version": "1.0.0",
     "content_scripts": [
         {
-            "js": ["content-script.js"],
+            "js": ["content-scripts/add-complete-button.js"],
             "matches": ["https://canvas.ssu.ac.kr/courses/*"],
             "all_frames": true
         }
     ],
     "host_permissions": [
-        "*://canvas.ssu.ac.kr/"
+        "*://canvas.ssu.ac.kr/",
+        "*://commons.ssu.ac.kr/"
     ],
     "permissions": [
         "cookies"
