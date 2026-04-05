@@ -8,9 +8,7 @@ const DEBUG = false;
     if (!iframe) return;
 
     // await the iframe loaded
-    if (iframe.contentWindow.document.readyState === 'loading') {
-        await new Promise((resolve) => { iframe.onload = resolve });
-    }
+    await new Promise((resolve) => { iframe.onload = resolve });
 
     const root = iframe.contentWindow.document.querySelector('#root');
     if (DEBUG) console.log('root', root);
