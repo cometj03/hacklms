@@ -36,4 +36,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         errorContent.style.display = 'block';
         return;
     }
+
+    sendMessageToBackground('get-video-progress', info);
+
+    document.getElementById('completeBtn').addEventListener('click', () => {
+        if (document.getElementById('completionStatus').textContent.includes('완료')
+            && !confirm('이미 학습이 완료되었습니다. 그럼에도 실행하시겠습니까?')) return;
+        sendMessageToBackground('complete-video-progress', info);
+    });
 });
+
+
+chrome.runtime.onMessage.addListener((message) => {
+    console.log(message);
+    if (message.target !== 'popup') return;
+
+    switch (message.type) {
+        case 'set-video-progress': {
+            const percent = message.data.percent;
+            if (!percent || typeof percent !== 'number') {
+                console.warn(`percent is not valid: ${percent}`);
+                break;
+            }
+            const bar = document.getElementById('progressBar');
+            const text = document.getElementById('percentText');
+            const statusBadge = document.getElementById('completionStatus');
+            bar.style.width = percent + '%';
+            text.textContent = percent + '%';
+            if (message.data.is_completed) {
+                statusBadge.textContent = '학습 완료';
+                statusBadge.style.backgroundColor = '#E8F5E9'; // 연한 초록 배경
+                statusBadge.style.color = '#2E7D32';         // 진한 초록 글씨
+            } else {
+                statusBadge.textContent = '미완료';
+                statusBadge.style.backgroundColor = '#FFF3E0'; // 연한 주황 배경
+                statusBadge.style.color = '#EF6C00';         // 진한 주황 글씨
+            }
+            break;
+        }
+        case 'complete-video-progress-error': {
+            alert(`오류가 발생했습니다.\nmessage: ${message.data.errorMessage}, time: ${message.data.time}, delta: ${message.data.delta}`);
+            break;
+        }
+    }
+});
+
+function sendMessageToBackground(type, data) {
+    chrome.runtime.sendMessage({target: 'background', type, data});
+}
