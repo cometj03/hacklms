@@ -3,6 +3,17 @@
 const DEBUG = false;
 
 (async () => {
+    const response = await fetch('https://ssuin-object.commonscdn.com/ssu-contents/contents31/ssu1000001/69cfb115525fc/contents/media_files/mobile/ssmovie.mp4', {
+        method: 'GET',
+        headers: {
+            'Referer': 'https://commons.ssu.ac.kr/',
+            'Range': 'bytes=0-',
+        }
+    });
+    console.log(response);
+})();
+
+(async () => {
     const iframe = document.querySelector('#tool_content');
     if (DEBUG) console.log('iframe', iframe);
     if (!iframe) return;

@@ -6,17 +6,26 @@
     "icons": {
         "128": "canvas.png"
     },
-    "content_scripts": [
-        {
-            "js": ["content-scripts/add-complete-button.js"],
-            "matches": ["https://canvas.ssu.ac.kr/courses/*"]
-            // "all_frames": true
-        }
+    "permissions": [
+        "scripting",
+        "activeTab"
     ],
     "host_permissions": [
         "*://canvas.ssu.ac.kr/"
+    //     "https://ssuin-object.commonscdn.com/*",
+    //     "https://commons.ssu.ac.kr/*"
     ],
-    "permissions": [
-        "cookies"
-    ]
+    // "content_scripts": [
+    //     {
+    //         "js": ["content-scripts/add-complete-button.js"],
+    //         "matches": ["https://canvas.ssu.ac.kr/courses/*"]
+    //         // "all_frames": true
+    //     }
+    // ],
+    "action": {
+        "default_popup": "popup/index.html"
+    },
+    "background": {
+        "service_worker": "background.js"
+    }
 }
