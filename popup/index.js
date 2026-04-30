@@ -1,16 +1,18 @@
 function getVideoInfo() {
     const iframe = document.querySelector('#tool_content');
+    const title = iframe.contentWindow.document.querySelector('#root > div > div.xnlail-component-title > div.xnlailct-title-wrapper > div > span').textContent;
     const root = iframe.contentWindow.document.querySelector('#root');
     const videoIframe = root.querySelector('div > div.xnlail-video-component > div.xnlailvc-commons-container > iframe');
     if (!videoIframe) return null;
 
     const videoSrc = videoIframe.getAttribute('src');                   // videoSrc ex) https://commons.ssu.ac.kr/em/69bd616f92eb6?startat=0.00&endat=0.00&TargetUrl=https%3A%2F%2Fcanvas.ssu.ac.kr%2Flearningx%2Fapi%2Fv1%2Fcourses%2F44036%2Fsections%2F0%2Fcomponents%2F794113%2Fprogress%3Fuser_id%3D20222904%26content_id%3D69bd616f92eb6%26content_type%3Dmovie&sl=1&pr=1&mxpr=1.00&lg=ko
     const targetUrl = new URL(videoSrc).searchParams.get('TargetUrl');  // targetUrl ex) https://canvas.ssu.ac.kr/learningx/api/v1/courses/44036/sections/0/components/794113/progress?user_id=20222904&content_id=69bd616f92eb6&content_type=movie
+    const contentId = new URL(targetUrl).searchParams.get('content_id'); // contentId ex) 69bd616f92eb6
     const courseId = root.getAttribute('data-course_id');
     const itemId = root.getAttribute('data-item_id');
     const xn_api_token = document.cookie.split('xn_api_token=').at(1)?.split(';')?.at(0);
 
-    return { targetUrl, courseId, itemId, xn_api_token };
+    return { title, targetUrl, contentId, courseId, itemId, xn_api_token };
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -30,7 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         func: getVideoInfo
     });
     const info = results[0].result;
-    
+
     if (!info) {
         mainContent.style.display = 'none';
         errorContent.style.display = 'block';
@@ -44,6 +46,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             && !confirm('이미 학습이 완료되었습니다. 그럼에도 실행하시겠습니까?')) return;
         sendMessageToBackground('complete-video-progress', info);
     });
+
+    // 동영상 다운로드 버튼
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+        if (confirm('동영상을 다운로드하시겠습니까?')) {
+            chrome.downloads.download({
+                url: `https://ssuin-object.commonscdn.com/ssu-contents/contents31/ssu1000001/${info.contentId}/contents/media_files/mobile/ssmovie.mp4`,
+                filename: `${info.title}.mp4`,
+                saveAs: true // 사용자가 저장 위치를 선택하게 함
+            }, (downloadId) => {
+                if (chrome.runtime.lastError) {
+                    alert(`다운로드 오류: ${chrome.runtime.lastError.message}`);
+                }
+            });
+        }
+    });
 });
 
 
@@ -54,15 +71,11 @@ chrome.runtime.onMessage.addListener((message) => {
     switch (message.type) {
         case 'set-video-progress': {
             const percent = message.data.percent;
-            if (!percent || typeof percent !== 'number') {
-                console.warn(`percent is not valid: ${percent}`);
-                break;
-            }
             const bar = document.getElementById('progressBar');
             const text = document.getElementById('percentText');
             const statusBadge = document.getElementById('completionStatus');
             bar.style.width = percent + '%';
-            text.textContent = percent + '%';
+            text.textContent = percent.toFixed(2) + '%';
             if (message.data.is_completed) {
                 statusBadge.textContent = '학습 완료';
                 statusBadge.style.backgroundColor = '#E8F5E9'; // 연한 초록 배경

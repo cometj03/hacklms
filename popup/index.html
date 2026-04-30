@@ -20,9 +20,26 @@
     
     button {
       width: 100%; padding: 10px; background-color: #4CAF50; color: white;
-      border: none; border-radius: 4px; cursor: pointer; font-weight: bold;
+      border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-bottom: 10px;
     }
     button:hover { background-color: #45a049; }
+    
+    button.secondary {
+      background-color: #2196F3;
+    }
+    button.secondary:hover { background-color: #0b7dda; }
+    
+    .control-group { margin-bottom: 15px; }
+    .control-label { font-size: 13px; margin-bottom: 5px; display: block; font-weight: 600; }
+    
+    select {
+      width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;
+      font-size: 13px; background-color: white; cursor: pointer;
+    }
+    select:hover { border-color: #999; }
+    
+    .button-group { display: flex; gap: 10px; }
+    .button-group button { flex: 1; margin-bottom: 0; }
 
     /* 2. 에러 화면 */
     #errorContent {
@@ -55,7 +72,10 @@
       </div>
     </div>
     <button id="completeBtn">학습 완료시키기</button>
-    <!-- <button id="downloadBtn">비디오 다운로드</button> -->
+  
+    <div class="button-group">
+      <button class="secondary" id="downloadBtn">동영상 다운로드</button>
+    </div>
   </div>
 
   <div id="errorContent">
