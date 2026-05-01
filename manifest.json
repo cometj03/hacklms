@@ -16,6 +16,13 @@
     "action": {
         "default_popup": "popup/index.html"
     },
+    "content_scripts": [
+        {
+            "matches": ["https://commons.ssu.ac.kr/em/*"],
+            "js": ["video-iframe-listener.js"],
+            "all_frames": true
+        }
+    ],
     "background": {
         "service_worker": "background.js"
     }

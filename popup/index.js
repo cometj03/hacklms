@@ -1,18 +1,11 @@
-function getVideoInfo() {
-    const iframe = document.querySelector('#tool_content');
-    const title = iframe.contentWindow.document.querySelector('#root > div > div.xnlail-component-title > div.xnlailct-title-wrapper > div > span').textContent;
-    const root = iframe.contentWindow.document.querySelector('#root');
-    const videoIframe = root.querySelector('div > div.xnlail-video-component > div.xnlailvc-commons-container > iframe');
-    if (!videoIframe) return null;
-
-    const videoSrc = videoIframe.getAttribute('src');                   // videoSrc ex) https://commons.ssu.ac.kr/em/69bd616f92eb6?startat=0.00&endat=0.00&TargetUrl=https%3A%2F%2Fcanvas.ssu.ac.kr%2Flearningx%2Fapi%2Fv1%2Fcourses%2F44036%2Fsections%2F0%2Fcomponents%2F794113%2Fprogress%3Fuser_id%3D20222904%26content_id%3D69bd616f92eb6%26content_type%3Dmovie&sl=1&pr=1&mxpr=1.00&lg=ko
-    const targetUrl = new URL(videoSrc).searchParams.get('TargetUrl');  // targetUrl ex) https://canvas.ssu.ac.kr/learningx/api/v1/courses/44036/sections/0/components/794113/progress?user_id=20222904&content_id=69bd616f92eb6&content_type=movie
-    const contentId = new URL(targetUrl).searchParams.get('content_id'); // contentId ex) 69bd616f92eb6
-    const courseId = root.getAttribute('data-course_id');
-    const itemId = root.getAttribute('data-item_id');
-    const xn_api_token = document.cookie.split('xn_api_token=').at(1)?.split(';')?.at(0);
-
-    return { title, targetUrl, contentId, courseId, itemId, xn_api_token };
+function getToken() {
+    const token = document.cookie.split('xn_api_token=').at(1)?.split(';')?.at(0);
+    if (!token) {
+        // TODO: error handling
+        console.warn('getToken: token not found in cookies');
+        return null;
+    }
+    return token;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -29,29 +22,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: getVideoInfo
+        func: getToken
     });
-    const info = results[0].result;
+    const token = results[0].result;
 
+    const info = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-info' });
+    console.log('popup info:', info);
     if (!info) {
         mainContent.style.display = 'none';
         errorContent.style.display = 'block';
         return;
     }
 
-    sendMessageToBackground('get-video-progress', info);
-
-    document.getElementById('completeBtn').addEventListener('click', () => {
-        if (document.getElementById('completionStatus').textContent.includes('완료')
-            && !confirm('이미 학습이 완료되었습니다. 그럼에도 실행하시겠습니까?')) return;
-        sendMessageToBackground('complete-video-progress', info);
-    });
-
-    // 동영상 다운로드 버튼
-    document.getElementById('downloadBtn').addEventListener('click', () => {
-        if (confirm('동영상을 다운로드하시겠습니까?')) {
+    // 동영상 정보 표시
+    document.getElementById('videoTitle').textContent = info.title;
+    
+    // 동영상 URL 가져오기 및 표시
+    // videoUrl ex) 'https://ssuin-object.commonscdn.com/ssu-contents/contents/ssu1000001/65c09c6666b2b/contents/media_files/screen.mp4'
+    // 경로가 contents인 경우도 있고 contents31인 경우도 있어서 contentId로만 url을 만들 수 없음
+    const {videoUrl} = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-url' });
+    const videoUrlElement = document.getElementById('videoUrl');
+    if (videoUrl) {
+        videoUrlElement.textContent = videoUrl;
+        videoUrlElement.addEventListener('click', () => {
             chrome.downloads.download({
-                url: `https://ssuin-object.commonscdn.com/ssu-contents/contents31/ssu1000001/${info.contentId}/contents/media_files/mobile/ssmovie.mp4`,
+                url: videoUrl,
                 filename: `${info.title}.mp4`,
                 saveAs: true // 사용자가 저장 위치를 선택하게 함
             }, (downloadId) => {
@@ -59,8 +54,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                     alert(`다운로드 오류: ${chrome.runtime.lastError.message}`);
                 }
             });
-        }
+        });
+    } else {
+        videoUrlElement.textContent = '동영상이 아직 로드되지 않았습니다. 인트로가 끝난 후 다시 시도해주세요.';
+        videoUrlElement.style.cursor = 'default';
+        videoUrlElement.style.color = '#999';
+        videoUrlElement.style.textDecoration = 'none';
+    }
+
+    sendMessageToBackground('get-video-progress', {...info, xn_api_token: token});
+
+    document.getElementById('completeBtn').addEventListener('click', () => {
+        if (document.getElementById('completionStatus').textContent.includes('학습 완료')
+            && !confirm('이미 학습이 완료되었습니다. 그럼에도 실행하시겠습니까?')) return;
+        sendMessageToBackground('complete-video-progress', {...info, xn_api_token: token});
     });
+
+    // 배속 조절 이벤트
+    // document.getElementById('playbackSpeed').addEventListener('change', (e) => {
+    //     const speed = parseFloat(e.target.value);
+    //     sendMessageToBackground('set-playback-speed', { ...info, speed });
+    // });
 });
 
 
