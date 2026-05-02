@@ -26,40 +26,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     const token = results[0].result;
 
-    const info = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-info' });
-    console.log('popup info:', info);
+    let info = null;
+    try {
+        info = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-info' });
+    } catch (error) {
+        // 메시지 리스너가 video iframe에 달려있기 때문에 리스너가 없는 경우(즉 video iframe이 없는 경우) 에러가 발생함.
+        // 다시 말해 비디오 강의가 아니라는 의미
+        // Do nothing
+    }
     if (!info) {
         mainContent.style.display = 'none';
         errorContent.style.display = 'block';
         return;
     }
 
+
     // 동영상 정보 표시
-    document.getElementById('videoTitle').textContent = info.title;
-    
+    document.getElementById('videoTitle').textContent = info.title || '제목 없음';
+
     // 동영상 URL 가져오기 및 표시
     // videoUrl ex) 'https://ssuin-object.commonscdn.com/ssu-contents/contents/ssu1000001/65c09c6666b2b/contents/media_files/screen.mp4'
     // 경로가 contents인 경우도 있고 contents31인 경우도 있어서 contentId로만 url을 만들 수 없음
     const {videoUrl} = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-url' });
+
     const videoUrlElement = document.getElementById('videoUrl');
+    const downloadBtn = document.getElementById('downloadBtn');
     if (videoUrl) {
         videoUrlElement.textContent = videoUrl;
-        videoUrlElement.addEventListener('click', () => {
+        downloadBtn.disabled = false;
+        downloadBtn.addEventListener('click', () => {
             chrome.downloads.download({
                 url: videoUrl,
                 filename: `${info.title}.mp4`,
-                saveAs: true // 사용자가 저장 위치를 선택하게 함
+                saveAs: true
             }, (downloadId) => {
                 if (chrome.runtime.lastError) {
                     alert(`다운로드 오류: ${chrome.runtime.lastError.message}`);
                 }
             });
         });
+        downloadBtn.textContent = '동영상 다운로드';
     } else {
-        videoUrlElement.textContent = '동영상이 아직 로드되지 않았습니다. 인트로가 끝난 후 다시 시도해주세요.';
         videoUrlElement.style.cursor = 'default';
         videoUrlElement.style.color = '#999';
         videoUrlElement.style.textDecoration = 'none';
+        downloadBtn.disabled = true;
     }
 
     sendMessageToBackground('get-video-progress', {...info, xn_api_token: token});
@@ -77,9 +88,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // });
 });
 
+function formatSeconds(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
+    const rounded = Math.floor(seconds);
+    const hours = Math.floor(rounded / 3600);
+    const minutes = Math.floor((rounded % 3600) / 60);
+    const secs = rounded % 60;
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
 chrome.runtime.onMessage.addListener((message) => {
-    console.log(message);
+    console.log('popup received message:', message);
     if (message.target !== 'popup') return;
 
     switch (message.type) {
@@ -92,12 +114,19 @@ chrome.runtime.onMessage.addListener((message) => {
             text.textContent = percent.toFixed(2) + '%';
             if (message.data.is_completed) {
                 statusBadge.textContent = '학습 완료';
-                statusBadge.style.backgroundColor = '#E8F5E9'; // 연한 초록 배경
-                statusBadge.style.color = '#2E7D32';         // 진한 초록 글씨
+                statusBadge.style.backgroundColor = '#E8F5E9';
+                statusBadge.style.color = '#2E7D32';
             } else {
                 statusBadge.textContent = '미완료';
-                statusBadge.style.backgroundColor = '#FFF3E0'; // 연한 주황 배경
-                statusBadge.style.color = '#EF6C00';         // 진한 주황 글씨
+                statusBadge.style.backgroundColor = '#FFF3E0';
+                statusBadge.style.color = '#EF6C00';
+            }
+
+            if (typeof message.data.duration === 'number') {
+                document.getElementById('videoLength').textContent = formatSeconds(message.data.duration);
+            }
+            if (typeof message.data.progress === 'number') {
+                document.getElementById('watchedLength').textContent = formatSeconds(message.data.progress);
             }
             break;
         }

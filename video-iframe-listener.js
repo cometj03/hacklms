@@ -10,7 +10,7 @@ function getVideoInfo() {
         console.warn('getVideoInfo: required video info not found in URL', {targetUrl, contentId, courseId, itemId});
         return null;
     }
-    const title = document.querySelector('title')?.textContent ?? 'Unknown Title';
+    const title = document.querySelector('title')?.textContent?.trim();
 
     return { title, targetUrl, contentId, courseId, itemId };
 }

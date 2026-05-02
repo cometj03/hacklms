@@ -1,5 +1,5 @@
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
-    console.log(message);
+    console.log('background received message:', message);
     if (message.target !== 'background') return;
 
     switch (message.type) {
@@ -13,6 +13,8 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
             sendMessageToPopup('set-video-progress', {
                 percent: status.progress / status.duration * 100,
                 is_completed: status.is_completed,
+                duration: status.duration,
+                progress: status.progress,
             });
             break;
         }
@@ -65,8 +67,10 @@ async function completeVideoProgress(data) {
 
         const status = await getVideoStatus(courseId, itemId, xn_api_token);
         sendMessageToPopup('set-video-progress', {
-            percent: time / duration * 100, 
+            percent: time / duration * 100,
             is_completed: status.is_completed,
+            duration: status.duration,
+            progress: status.progress,
         });
         console.log(`${time / duration * 100}% 완료`, {time, delta});
     } while (time < duration);
