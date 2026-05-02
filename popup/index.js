@@ -9,6 +9,7 @@ function getToken() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    document.querySelector('h3').textContent = `Hack LMS v${chrome.runtime.getVersion()}`;
     const mainContent = document.getElementById('mainContent');
     const errorContent = document.getElementById('errorContent');
 
