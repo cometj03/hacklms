@@ -128,8 +128,17 @@
 </head>
 <body>
   <h3>Hack LMS</h3>
-  
+
   <div id="mainContent">
+    <!-- 동영상 정보 표시 -->
+    <details class="video-info">
+      <summary>동영상 정보</summary>
+      <div class="video-info-row"><span class="meta-label">제목</span><span class="meta-value video-title" id="videoTitle">제목 불러오는 중...</span></div>
+      <div class="video-info-row"><span class="meta-label">URL</span><span class="video-url" id="videoUrl">URL 불러오는 중...</span></div>
+      <div class="video-info-row"><span class="meta-label">동영상 길이</span><span class="meta-value" id="videoLength">--:--</span></div>
+      <div class="video-info-row"><span class="meta-label">시청 길이</span><span class="meta-value" id="watchedLength">--:--</span></div>
+    </details>
+
     <div class="status-label">
       <span>학습 진도</span>
       <span id="completionStatus" style="font-size: 11px; padding: 2px 6px; border-radius: 10px; background: #eee; color: #666;">확인 중...</span>
@@ -144,16 +153,7 @@
       </div>
     </div>
     <button id="completeBtn">학습 완료시키기</button>
-    <button id="downloadBtn" disabled>동영상이 아직 로드되지 않았습니다. 인트로가 끝난 후 다시 시도해주세요.</button>
-
-      <!-- 동영상 정보 표시 -->
-    <details class="video-info">
-      <summary>동영상 정보</summary>
-      <div class="video-info-row"><span class="meta-label">제목</span><span class="meta-value video-title" id="videoTitle">제목 불러오는 중...</span></div>
-      <div class="video-info-row"><span class="meta-label">URL</span><span class="video-url" id="videoUrl">URL 불러오는 중...</span></div>
-      <div class="video-info-row"><span class="meta-label">동영상 길이</span><span class="meta-value" id="videoLength">--:--</span></div>
-      <div class="video-info-row"><span class="meta-label">시청 길이</span><span class="meta-value" id="watchedLength">--:--</span></div>
-    </details>
+    <button id="downloadBtn" disabled>인트로가 끝난 후 다시 시도해주세요.</button>
   </div>
 
   <div id="errorContent">
