@@ -83,10 +83,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // 배속 조절 이벤트
-    // document.getElementById('playbackSpeed').addEventListener('change', (e) => {
-    //     const speed = parseFloat(e.target.value);
-    //     sendMessageToBackground('set-playback-speed', { ...info, speed });
-    // });
+    const speedSlider = document.getElementById('playbackSpeed');
+    const speedValue = document.getElementById('speedValue');
+    speedSlider.addEventListener('input', () => {
+        speedValue.textContent = speedSlider.value + 'x';
+    });
+    speedSlider.addEventListener('change', (e) => {
+        // const newSpeed = parseFloat(e.target.value);
+        // chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'set-playback-speed', data: { speed: newSpeed } });
+    });
+
+    document.getElementById('unlockSpeedBtn').addEventListener('click', () => {
+    });
 });
 
 function formatSeconds(seconds) {
