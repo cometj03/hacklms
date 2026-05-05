@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "Hack LMS",
     "description": "Utilies for SSU LMS",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "icons": {
         "128": "canvas.png"
     },
