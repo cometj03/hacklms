@@ -15,6 +15,11 @@ function getVideoInfo() {
     return { title, targetUrl, contentId, courseId, itemId };
 }
 
+const VIDEO_SELECTOR = '#video-play-video1 > div.vc-vplay-container.non-selectable > video';
+
+// ratechange 이벤트가 전파되지 않도록 막는 가드 함수
+const guard = (e) => { e.stopImmediatePropagation(); };
+
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     if (message.target !== 'video-iframe') return;
     switch (message.type) {
@@ -26,7 +31,7 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
             break;
         }
         case "get-video-url": {
-            const videoUrl = document.querySelector('#video-play-video1 > div.vc-vplay-container.non-selectable > video')?.getAttribute('src');
+            const videoUrl = document.querySelector(VIDEO_SELECTOR)?.getAttribute('src');
             if (videoUrl?.startsWith('https://ssuin-object.commonscdn.com')) {
                 sendResponse({ videoUrl });
             } else {
@@ -38,6 +43,30 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
             }
             break;
         }
+        case "get-video-playback-rate": {
+            const video = document.querySelector(VIDEO_SELECTOR);
+            if (video) {
+                sendResponse({ playbackRate: video.playbackRate });
+            } else {
+                sendResponse({ playbackRate: 1.0 });
+            }
+            break;
+        }
+        case "set-video-playback-rate": {
+            const video = document.querySelector(VIDEO_SELECTOR);
+            if (video) {
+                video.removeEventListener('ratechange', guard, true);
+                video.addEventListener('ratechange', guard, true);
+                video.playbackRate = message.data.playbackRate;
+                sendResponse({ success: true });
+            } else {
+                sendResponse({ success: false, errorMessage: 'video element not found' });
+            }
+            break;
+        }
+        default:
+            console.warn('video-iframe received message with unknown type:', message);
+            break;
     }
     // TODO: error handling
 });

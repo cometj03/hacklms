@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     sendMessageToBackground('get-video-progress', {courseId, itemId, xn_api_token: token});
 
     document.getElementById('completeBtn').addEventListener('click', () => {
-        // 경고 멘트 추가
+        // TODO: 경고 멘트 추가
         if (document.getElementById('completionStatus').textContent.includes('학습 완료')
             && !confirm('이미 학습이 완료되었습니다. 그럼에도 실행하시겠습니까?')) return;
         sendMessageToBackground('complete-video-progress', {
@@ -92,12 +92,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 배속 조절 이벤트
     const speedSlider = document.getElementById('playbackSpeed');
     const speedValue = document.getElementById('speedValue');
+    const {playbackRate} = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-playback-rate' });
+    speedSlider.value = playbackRate || 1.0;
+    speedValue.textContent = playbackRate + 'x';
     speedSlider.addEventListener('input', () => {
         speedValue.textContent = speedSlider.value + 'x';
     });
-    speedSlider.addEventListener('change', (e) => {
-        // const newSpeed = parseFloat(e.target.value);
-        // chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'set-playback-speed', data: { speed: newSpeed } });
+    speedSlider.addEventListener('change', async (e) => {
+        const newSpeed = parseFloat(e.target.value);
+        const {success, errorMessage} = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'set-video-playback-rate', data: { playbackRate: newSpeed } });
+        if (!success) {
+            alert(`배속 조절 오류: ${errorMessage}`);
+        }
     });
 });
 
@@ -147,6 +153,9 @@ chrome.runtime.onMessage.addListener((message) => {
             alert(`오류가 발생했습니다.\nmessage: ${message.data.errorMessage}, time: ${message.data.time}, delta: ${message.data.delta}`);
             break;
         }
+        default:
+            console.warn('popup received message with unknown type:', message);
+            break;
     }
 });
 

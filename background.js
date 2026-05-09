@@ -18,6 +18,9 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
             });
             break;
         }
+        default:
+            console.warn('background received message with unknown type:', message);
+            break;
     }
 });
 
@@ -79,10 +82,6 @@ async function completeVideoProgress(data) {
 function sendMessageToPopup(type, data) {
     chrome.runtime.sendMessage({target: 'popup', type, data});
 }
-
-// 배속 방지 리스너 제거
-// video.removeEventListener('ratechange', getEventListeners(video).ratechange[0].listener)
-
 
 // file
 // POST https://canvas.ssu.ac.kr/learningx/api/v1/courses/44036/sections/0/components/794190/progress/forceSubmit?user_id=37567&user_login=20222904&content_id=${content_id}&content_type=file
