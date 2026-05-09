@@ -40,10 +40,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         errorContent.style.display = 'block';
         return;
     }
+    const { title: videoTitle, targetUrl, contentId, courseId, itemId } = info;
 
 
     // 동영상 정보 표시
-    document.getElementById('videoTitle').textContent = info.title || '제목 없음';
+    document.getElementById('videoTitle').textContent = videoTitle || '제목 없음';
 
     // 동영상 URL 가져오기 및 표시
     // videoUrl ex) 'https://ssuin-object.commonscdn.com/ssu-contents/contents/ssu1000001/65c09c6666b2b/contents/media_files/screen.mp4'
@@ -58,7 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         downloadBtn.addEventListener('click', () => {
             chrome.downloads.download({
                 url: videoUrl,
-                filename: `${info.title}.mp4`,
+                filename: `${videoTitle}.mp4`,
                 saveAs: true
             }, (downloadId) => {
                 if (chrome.runtime.lastError) {
@@ -74,12 +75,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         downloadBtn.disabled = true;
     }
 
-    sendMessageToBackground('get-video-progress', {...info, xn_api_token: token});
+    sendMessageToBackground('get-video-progress', {courseId, itemId, xn_api_token: token});
 
     document.getElementById('completeBtn').addEventListener('click', () => {
+        // 경고 멘트 추가
         if (document.getElementById('completionStatus').textContent.includes('학습 완료')
             && !confirm('이미 학습이 완료되었습니다. 그럼에도 실행하시겠습니까?')) return;
-        sendMessageToBackground('complete-video-progress', {...info, xn_api_token: token});
+        sendMessageToBackground('complete-video-progress', {
+            targetUrl,
+            courseId,
+            itemId,
+            xn_api_token: token
+        });
     });
 
     // 배속 조절 이벤트
@@ -91,9 +98,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     speedSlider.addEventListener('change', (e) => {
         // const newSpeed = parseFloat(e.target.value);
         // chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'set-playback-speed', data: { speed: newSpeed } });
-    });
-
-    document.getElementById('unlockSpeedBtn').addEventListener('click', () => {
     });
 });
 
