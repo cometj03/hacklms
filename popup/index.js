@@ -1,3 +1,11 @@
+function sanitizeFilename(name) {
+    return (name || 'video')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 200) || 'video';
+}
+
 function getToken() {
     const token = document.cookie.split('xn_api_token=').at(1)?.split(';')?.at(0);
     if (!token) {
@@ -47,32 +55,121 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('videoTitle').textContent = videoTitle || '제목 없음';
 
     // 동영상 URL 가져오기 및 표시
-    // videoUrl ex) 'https://ssuin-object.commonscdn.com/ssu-contents/contents/ssu1000001/65c09c6666b2b/contents/media_files/screen.mp4'
-    // 경로가 contents인 경우도 있고 contents31인 경우도 있어서 contentId로만 url을 만들 수 없음
-    const {videoUrl} = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-url' });
-
+    // background의 webRequest listener가 캐시한 mp4 URL을 조회
+    // 파일명/경로가 다양함 (screen.mp4, main_(uuid).mp4 / contents, contents31, ssu-toast vs ssuin-object 등)
+    // 캐시 비어있으면 autoplay 트리거 후 일정시간 polling
     const videoUrlElement = document.getElementById('videoUrl');
     const downloadBtn = document.getElementById('downloadBtn');
+
+    let videoUrl = await getCapturedMp4(tab.id);
+    if (!videoUrl) {
+        videoUrlElement.textContent = '영상 URL 캡처 중...';
+        videoUrlElement.style.color = '#999';
+        downloadBtn.disabled = true;
+        downloadBtn.textContent = '대기 중...';
+        try {
+            await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'trigger-autoplay' });
+        } catch (e) { /* iframe missing — handled below */ }
+        const start = Date.now();
+        while (Date.now() - start < 8000) {
+            await new Promise(r => setTimeout(r, 300));
+            videoUrl = await getCapturedMp4(tab.id);
+            if (videoUrl) break;
+        }
+    }
+
     if (videoUrl) {
         videoUrlElement.textContent = videoUrl;
         downloadBtn.disabled = false;
-        downloadBtn.addEventListener('click', () => {
-            chrome.downloads.download({
-                url: videoUrl,
-                filename: `${videoTitle}.mp4`,
-                saveAs: true
-            }, (downloadId) => {
-                if (chrome.runtime.lastError) {
-                    alert(`다운로드 오류: ${chrome.runtime.lastError.message}`);
+        downloadBtn.addEventListener('click', async () => {
+            const originalText = downloadBtn.textContent;
+            const filename = `${sanitizeFilename(videoTitle)}.mp4`;
+
+            // Step 1: 클릭 즉시 user-gesture 상태에서 saveFilePicker 호출
+            let handle = null;
+            if ('showSaveFilePicker' in window) {
+                try {
+                    handle = await window.showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{
+                            description: 'MP4 Video',
+                            accept: { 'video/mp4': ['.mp4'] }
+                        }]
+                    });
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    alert(`저장 위치 선택 실패: ${err.message}`);
+                    return;
                 }
-            });
+            }
+
+            downloadBtn.disabled = true;
+            try {
+                downloadBtn.textContent = '다운로드 시작... (창 닫지 마세요)';
+                const res = await fetch(videoUrl);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const total = Number(res.headers.get('content-length')) || 0;
+                const updateProgress = (received) => {
+                    downloadBtn.textContent = total
+                        ? `다운로드 중 ${Math.floor(received / total * 100)}%...`
+                        : `다운로드 중 ${Math.floor(received / 1024 / 1024)} MB...`;
+                };
+
+                if (handle) {
+                    // Step 2: 스트리밍으로 디스크에 직접 쓰기 (메모리 효율)
+                    const writable = await handle.createWritable();
+                    const reader = res.body.getReader();
+                    let received = 0;
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            await writable.write(value);
+                            received += value.length;
+                            updateProgress(received);
+                        }
+                        await writable.close();
+                        downloadBtn.textContent = '완료';
+                    } catch (err) {
+                        await writable.abort();
+                        throw err;
+                    }
+                } else {
+                    // Fallback: showSaveFilePicker 미지원
+                    const chunks = [];
+                    let received = 0;
+                    const reader = res.body.getReader();
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        chunks.push(value);
+                        received += value.length;
+                        updateProgress(received);
+                    }
+                    const blob = new Blob(chunks, { type: 'video/mp4' });
+                    const objectUrl = URL.createObjectURL(blob);
+                    chrome.downloads.download({
+                        url: objectUrl,
+                        filename,
+                        saveAs: true
+                    }, () => setTimeout(() => URL.revokeObjectURL(objectUrl), 60000));
+                }
+            } catch (err) {
+                alert(`다운로드 실패: ${err.message}`);
+            } finally {
+                downloadBtn.disabled = false;
+                downloadBtn.textContent = originalText;
+            }
         });
         downloadBtn.textContent = '동영상 다운로드';
     } else {
+        videoUrlElement.textContent = '영상 URL을 잡지 못했습니다. 페이지에서 영상을 한 번 재생한 뒤 popup을 다시 열어주세요.';
         videoUrlElement.style.cursor = 'default';
         videoUrlElement.style.color = '#999';
         videoUrlElement.style.textDecoration = 'none';
         downloadBtn.disabled = true;
+        downloadBtn.textContent = 'URL 없음';
     }
 
     sendMessageToBackground('get-video-progress', {courseId, itemId, xn_api_token: token});
@@ -161,4 +258,13 @@ chrome.runtime.onMessage.addListener((message) => {
 
 function sendMessageToBackground(type, data) {
     chrome.runtime.sendMessage({target: 'background', type, data});
+}
+
+function getCapturedMp4(tabId) {
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+            { target: 'background', type: 'get-captured-mp4', data: { tabId } },
+            (resp) => resolve(resp?.videoUrl ?? null)
+        );
+    });
 }
