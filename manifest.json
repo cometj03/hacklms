@@ -8,10 +8,14 @@
     },
     "permissions": [
         "scripting",
-        "downloads"
+        "downloads",
+        "declarativeNetRequest",
+        "webRequest"
     ],
     "host_permissions": [
-        "*://canvas.ssu.ac.kr/"
+        "*://canvas.ssu.ac.kr/*",
+        "*://*.commonscdn.com/*",
+        "*://commons.ssu.ac.kr/*"
     ],
     "action": {
         "default_popup": "popup/index.html"
