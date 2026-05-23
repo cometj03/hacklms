@@ -20,6 +20,9 @@ const VIDEO_SELECTOR = '#video-play-video1 > div.vc-vplay-container.non-selectab
 // ratechange 이벤트가 전파되지 않도록 막는 가드 함수
 const guard = (e) => { e.stopImmediatePropagation(); };
 
+// 페이지 lifetime 동안 자동 재생 클릭을 한 번만 허용 (popup 반복 열기로 인한 인트로 재시작 방지)
+let autoPlayAttempted = false;
+
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     if (message.target !== 'video-iframe') return;
     switch (message.type) {
@@ -30,17 +33,22 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
             }
             break;
         }
-        case "get-video-url": {
-            const videoUrl = document.querySelector(VIDEO_SELECTOR)?.getAttribute('src');
-            if (videoUrl?.startsWith('https://ssuin-object.commonscdn.com')) {
-                sendResponse({ videoUrl });
-            } else {
-                // 동영상이 아직 로드되지 않은 경우 재생 버튼 클릭하여 로드 시도
-                if (videoUrl !== '/settings/viewer/uniplayer/intro.mp4') {
-                    document.querySelector('#front-screen > div > div.vc-front-screen-btn-container > div.vc-front-screen-btn-wrapper.video1-btn > div')?.click();
-                }
-                sendResponse({ videoUrl: null });
+        case "trigger-autoplay": {
+            // background webRequest listener가 mp4 패킷을 캡처하도록 재생 버튼 클릭
+            if (autoPlayAttempted) {
+                sendResponse({ triggered: false });
+                break;
             }
+            // front-screen이 숨김/부재이면 이미 재생이 시작된 상태 — click 시 인트로 재시작될 수 있어 skip
+            const frontScreen = document.querySelector('#front-screen');
+            if (!frontScreen || frontScreen.offsetParent === null) {
+                autoPlayAttempted = true;
+                sendResponse({ triggered: false });
+                break;
+            }
+            document.querySelector('#front-screen > div > div.vc-front-screen-btn-container > div.vc-front-screen-btn-wrapper.video1-btn > div')?.click();
+            autoPlayAttempted = true;
+            sendResponse({ triggered: true });
             break;
         }
         case "get-video-playback-rate": {
