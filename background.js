@@ -24,21 +24,75 @@ chrome.runtime.onInstalled.addListener(setupRefererRule);
 chrome.runtime.onStartup.addListener(setupRefererRule);
 
 // === Captured MP4 URL cache (tabId → URL) ===
-// 영상 player가 fetch하는 본 컨텐츠 mp4 요청을 가로채서 popup이 다운로드할 URL을 결정
+// MV3 service worker가 종료되어도 캐시가 유지되도록 storage.session에도 보관한다.
 const capturedMp4Urls = new Map();
+const CAPTURED_MP4_KEY_PREFIX = 'capturedMp4:';
 
-const INTRO_PATTERN = /\/uniplayer\/intro\.mp4(\?|$)/;
-const MAIN_PATTERN = /\/media_files\/(.+?)\.mp4(\?|$)/;
+const PLAYER_ASSET_PATTERN = /\/uniplayer\/(?:intro|preloader)\.mp4(?:[?#]|$)/i;
+const MP4_PATTERN = /\.mp4(?:[?#]|$)/i;
+const MAIN_VIDEO_PATTERN = /\/media_files\/.+\.mp4(?:[?#]|$)/i;
+
+function capturedMp4Key(tabId) {
+    return `${CAPTURED_MP4_KEY_PREFIX}${tabId}`;
+}
+
+function isDownloadableMp4(url) {
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'https:'
+            && MP4_PATTERN.test(parsed.href)
+            && !PLAYER_ASSET_PATTERN.test(parsed.href);
+    } catch {
+        return false;
+    }
+}
+
+function isCapturableMainVideo(url) {
+    return isDownloadableMp4(url) && MAIN_VIDEO_PATTERN.test(url);
+}
+
+function storeCapturedMp4(tabId, url) {
+    capturedMp4Urls.set(tabId, url);
+    chrome.storage.session.set({ [capturedMp4Key(tabId)]: url });
+}
+
+async function getCapturedMp4(tabId) {
+    const memoryValue = capturedMp4Urls.get(tabId);
+    if (memoryValue && isDownloadableMp4(memoryValue)) return memoryValue;
+    if (memoryValue) capturedMp4Urls.delete(tabId);
+
+    const key = capturedMp4Key(tabId);
+    const stored = await chrome.storage.session.get(key);
+    const url = stored[key] ?? null;
+    if (url && isDownloadableMp4(url)) {
+        capturedMp4Urls.set(tabId, url);
+        return url;
+    }
+    if (url) await chrome.storage.session.remove(key);
+    return null;
+}
+
+function clearCapturedMp4(tabId) {
+    capturedMp4Urls.delete(tabId);
+    chrome.storage.session.remove(capturedMp4Key(tabId));
+}
+
+function sanitizeDownloadFilename(name) {
+    return (name || 'video.mp4')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 204) || 'video.mp4';
+}
 
 chrome.webRequest.onBeforeRequest.addListener(
     (details) => {
         const { tabId, url } = details;
         if (tabId < 0) return;
-        if (INTRO_PATTERN.test(url)) return;
-        if (!MAIN_PATTERN.test(url)) return;
-        // Range request로 같은 URL이 반복되니 첫 매칭만 기록
-        if (capturedMp4Urls.has(tabId)) return;
-        capturedMp4Urls.set(tabId, url);
+        if (!isCapturableMainVideo(url)) return;
+        // Range request는 무시하되, 같은 탭이 다른 강의로 이동하면 새 URL로 교체한다.
+        if (capturedMp4Urls.get(tabId) === url) return;
+        storeCapturedMp4(tabId, url);
     },
     { urls: ['*://*.commonscdn.com/*'] }
 );
@@ -46,13 +100,20 @@ chrome.webRequest.onBeforeRequest.addListener(
 // canvas 페이지가 새 main_frame 로드되면 그 탭 캐시 클리어
 chrome.webRequest.onBeforeRequest.addListener(
     (details) => {
-        if (details.tabId >= 0) capturedMp4Urls.delete(details.tabId);
+        if (details.tabId >= 0) clearCapturedMp4(details.tabId);
     },
     { urls: ['*://canvas.ssu.ac.kr/*'], types: ['main_frame'] }
 );
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-    capturedMp4Urls.delete(tabId);
+    clearCapturedMp4(tabId);
+});
+
+// Canvas가 SPA 방식으로 다른 강의로 이동해도 이전 영상 URL을 사용하지 않는다.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.url?.startsWith('https://canvas.ssu.ac.kr/')) {
+        clearCapturedMp4(tabId);
+    }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -78,8 +139,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case 'get-captured-mp4': {
             const tabId = message.data?.tabId;
-            sendResponse({ videoUrl: capturedMp4Urls.get(tabId) ?? null });
-            return;
+            getCapturedMp4(tabId)
+                .then(videoUrl => sendResponse({ videoUrl }))
+                .catch(error => sendResponse({ videoUrl: null, errorMessage: error.message }));
+            return true;
+        }
+        case 'download-video': {
+            const videoUrl = message.data?.videoUrl;
+            const filename = sanitizeDownloadFilename(message.data?.filename);
+            if (!isDownloadableMp4(videoUrl)) {
+                sendResponse({ downloadId: null, errorMessage: '지원하지 않는 영상 URL입니다.' });
+                return;
+            }
+            chrome.downloads.download({
+                url: videoUrl,
+                filename,
+                saveAs: true,
+                conflictAction: 'uniquify'
+            }, (downloadId) => {
+                const errorMessage = chrome.runtime.lastError?.message ?? null;
+                sendResponse({ downloadId: downloadId ?? null, errorMessage });
+            });
+            return true;
         }
         default:
             console.warn('background received message with unknown type:', message);
