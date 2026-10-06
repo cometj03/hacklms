@@ -1,11 +1,3 @@
-function sanitizeFilename(name) {
-    return (name || 'video')
-        .replace(/[\\/:*?"<>|]/g, '_')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 200) || 'video';
-}
-
 function getToken() {
     const token = document.cookie.split('xn_api_token=').at(1)?.split(';')?.at(0);
     if (!token) {
@@ -14,6 +6,44 @@ function getToken() {
         return null;
     }
     return token;
+}
+
+async function findVideoFrame(tabId) {
+    const frames = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: () => ({ hostname: location.hostname, pathname: location.pathname })
+    });
+    const candidates = frames
+        .filter(frame => frame.result?.hostname === 'commons.ssu.ac.kr')
+        .sort((a, b) => Number(!a.result.pathname.startsWith('/em/'))
+            - Number(!b.result.pathname.startsWith('/em/')));
+
+    for (const frame of candidates) {
+        try {
+            const info = await sendMessageToVideoFrame(tabId, frame.frameId, 'get-video-info');
+            if (info) return { frameId: frame.frameId, info };
+        } catch (error) {
+            console.debug('findVideoFrame: frame did not respond', frame.frameId, error);
+        }
+    }
+    return null;
+}
+
+async function sendMessageToVideoFrame(tabId, frameId, type, data) {
+    return await chrome.tabs.sendMessage(
+        tabId,
+        { target: 'video-iframe', type, data },
+        { frameId }
+    );
+}
+
+async function getVideoUrlFromFrame(tabId, frameId) {
+    try {
+        const response = await sendMessageToVideoFrame(tabId, frameId, 'get-video-url');
+        return response?.videoUrl ?? null;
+    } catch {
+        return null;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -35,20 +65,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     const token = results[0].result;
 
-    let info = null;
-    try {
-        info = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-info' });
-    } catch (error) {
-        // 메시지 리스너가 video iframe에 달려있기 때문에 리스너가 없는 경우(즉 video iframe이 없는 경우) 에러가 발생함.
-        // 다시 말해 비디오 강의가 아니라는 의미
-        // Do nothing
-    }
-    if (!info) {
+    const videoFrame = await findVideoFrame(tab.id);
+    if (!videoFrame) {
         mainContent.style.display = 'none';
         errorContent.style.display = 'block';
         return;
     }
-    const { title: videoTitle, targetUrl, contentId, courseId, itemId } = info;
+    const { frameId, info } = videoFrame;
+    const { title: videoTitle, targetUrl, courseId, itemId } = info;
 
 
     // 동영상 정보 표시
@@ -61,20 +85,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const videoUrlElement = document.getElementById('videoUrl');
     const downloadBtn = document.getElementById('downloadBtn');
 
-    let videoUrl = await getCapturedMp4(tab.id);
+    let videoUrl = await getVideoUrlFromFrame(tab.id, frameId) || await getCapturedMp4(tab.id);
     if (!videoUrl) {
         videoUrlElement.textContent = '영상 URL 캡처 중...';
         videoUrlElement.style.color = '#999';
         downloadBtn.disabled = true;
         downloadBtn.textContent = '대기 중...';
         try {
-            await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'trigger-autoplay' });
+            const response = await sendMessageToVideoFrame(tab.id, frameId, 'trigger-autoplay');
+            videoUrl = response?.videoUrl ?? null;
         } catch (e) { /* iframe missing — handled below */ }
         const start = Date.now();
-        while (Date.now() - start < 8000) {
+        while (!videoUrl && Date.now() - start < 8000) {
             await new Promise(r => setTimeout(r, 300));
-            videoUrl = await getCapturedMp4(tab.id);
-            if (videoUrl) break;
+            videoUrl = await getVideoUrlFromFrame(tab.id, frameId) || await getCapturedMp4(tab.id);
         }
     }
 
@@ -83,83 +107,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         downloadBtn.disabled = false;
         downloadBtn.addEventListener('click', async () => {
             const originalText = downloadBtn.textContent;
-            const filename = `${sanitizeFilename(videoTitle)}.mp4`;
-
-            // Step 1: 클릭 즉시 user-gesture 상태에서 saveFilePicker 호출
-            let handle = null;
-            if ('showSaveFilePicker' in window) {
-                try {
-                    handle = await window.showSaveFilePicker({
-                        suggestedName: filename,
-                        types: [{
-                            description: 'MP4 Video',
-                            accept: { 'video/mp4': ['.mp4'] }
-                        }]
-                    });
-                } catch (err) {
-                    if (err.name === 'AbortError') return;
-                    alert(`저장 위치 선택 실패: ${err.message}`);
-                    return;
-                }
-            }
-
+            const filename = `${videoTitle || 'video'}.mp4`;
             downloadBtn.disabled = true;
             try {
-                downloadBtn.textContent = '다운로드 시작... (창 닫지 마세요)';
-                const res = await fetch(videoUrl);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-                const total = Number(res.headers.get('content-length')) || 0;
-                const updateProgress = (received) => {
-                    downloadBtn.textContent = total
-                        ? `다운로드 중 ${Math.floor(received / total * 100)}%...`
-                        : `다운로드 중 ${Math.floor(received / 1024 / 1024)} MB...`;
-                };
-
-                if (handle) {
-                    // Step 2: 스트리밍으로 디스크에 직접 쓰기 (메모리 효율)
-                    const writable = await handle.createWritable();
-                    const reader = res.body.getReader();
-                    let received = 0;
-                    try {
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            await writable.write(value);
-                            received += value.length;
-                            updateProgress(received);
-                        }
-                        await writable.close();
-                        downloadBtn.textContent = '완료';
-                    } catch (err) {
-                        await writable.abort();
-                        throw err;
-                    }
-                } else {
-                    // Fallback: showSaveFilePicker 미지원
-                    const chunks = [];
-                    let received = 0;
-                    const reader = res.body.getReader();
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        chunks.push(value);
-                        received += value.length;
-                        updateProgress(received);
-                    }
-                    const blob = new Blob(chunks, { type: 'video/mp4' });
-                    const objectUrl = URL.createObjectURL(blob);
-                    chrome.downloads.download({
-                        url: objectUrl,
-                        filename,
-                        saveAs: true
-                    }, () => setTimeout(() => URL.revokeObjectURL(objectUrl), 60000));
+                downloadBtn.textContent = '다운로드 요청 중...';
+                const response = await chrome.runtime.sendMessage({
+                    target: 'background',
+                    type: 'download-video',
+                    data: { videoUrl, filename }
+                });
+                if (!response?.downloadId) {
+                    throw new Error(response?.errorMessage || '다운로드를 시작하지 못했습니다.');
                 }
+                downloadBtn.textContent = '다운로드 시작됨';
             } catch (err) {
                 alert(`다운로드 실패: ${err.message}`);
             } finally {
                 downloadBtn.disabled = false;
-                downloadBtn.textContent = originalText;
+                setTimeout(() => { downloadBtn.textContent = originalText; }, 1500);
             }
         });
         downloadBtn.textContent = '동영상 다운로드';
@@ -172,24 +137,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         downloadBtn.textContent = 'URL 없음';
     }
 
-    sendMessageToBackground('get-video-progress', {courseId, itemId, xn_api_token: token});
+    const completeBtn = document.getElementById('completeBtn');
+    if (targetUrl && courseId && itemId && token) {
+        sendMessageToBackground('get-video-progress', {courseId, itemId, xn_api_token: token});
 
-    document.getElementById('completeBtn').addEventListener('click', () => {
-        // TODO: 경고 멘트 추가
-        if (document.getElementById('completionStatus').textContent.includes('학습 완료')
-            && !confirm('이미 학습이 완료되었습니다. 그럼에도 실행하시겠습니까?')) return;
-        sendMessageToBackground('complete-video-progress', {
-            targetUrl,
-            courseId,
-            itemId,
-            xn_api_token: token
+        completeBtn.addEventListener('click', () => {
+            // TODO: 경고 멘트 추가
+            if (document.getElementById('completionStatus').textContent.includes('학습 완료')
+                && !confirm('이미 학습이 완료되었습니다. 그럼에도 실행하시겠습니까?')) return;
+            sendMessageToBackground('complete-video-progress', {
+                targetUrl,
+                courseId,
+                itemId,
+                xn_api_token: token
+            });
         });
-    });
+    } else {
+        document.getElementById('completionStatus').textContent = '진도 정보 없음';
+        completeBtn.disabled = true;
+        completeBtn.textContent = '학습 진도 조작 미지원';
+    }
 
     // 배속 조절 이벤트
     const speedSlider = document.getElementById('playbackSpeed');
     const speedValue = document.getElementById('speedValue');
-    const {playbackRate} = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'get-video-playback-rate' });
+    const {playbackRate} = await sendMessageToVideoFrame(tab.id, frameId, 'get-video-playback-rate');
     speedSlider.value = playbackRate || 1.0;
     speedValue.textContent = playbackRate + 'x';
     speedSlider.addEventListener('input', () => {
@@ -197,7 +169,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     speedSlider.addEventListener('change', async (e) => {
         const newSpeed = parseFloat(e.target.value);
-        const {success, errorMessage} = await chrome.tabs.sendMessage(tab.id, { target: 'video-iframe', type: 'set-video-playback-rate', data: { playbackRate: newSpeed } });
+        const {success, errorMessage} = await sendMessageToVideoFrame(
+            tab.id,
+            frameId,
+            'set-video-playback-rate',
+            { playbackRate: newSpeed }
+        );
         if (!success) {
             alert(`배속 조절 오류: ${errorMessage}`);
         }
