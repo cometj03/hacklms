@@ -29,8 +29,8 @@ async function findVideoFrame(tabId) {
     return null;
 }
 
-function sendMessageToVideoFrame(tabId, frameId, type, data) {
-    return chrome.tabs.sendMessage(
+async function sendMessageToVideoFrame(tabId, frameId, type, data) {
+    return await chrome.tabs.sendMessage(
         tabId,
         { target: 'video-iframe', type, data },
         { frameId }
