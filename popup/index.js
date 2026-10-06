@@ -20,11 +20,7 @@ async function findVideoFrame(tabId) {
 
     for (const frame of candidates) {
         try {
-            const info = await chrome.tabs.sendMessage(
-                tabId,
-                { target: 'video-iframe', type: 'get-video-info' },
-                { frameId: frame.frameId }
-            );
+            const info = await sendMessageToVideoFrame(tabId, frame.frameId, 'get-video-info');
             if (info) return { frameId: frame.frameId, info };
         } catch (error) {
             console.debug('findVideoFrame: frame did not respond', frame.frameId, error);
